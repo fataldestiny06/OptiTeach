@@ -103,7 +103,7 @@ class Course(Base):
     code = Column(String(50), nullable=False, index=True) # e.g. CS302
     title = Column(String(255), nullable=False) # e.g. Database Management Systems
     semester = Column(String(50), nullable=False) # e.g. Fall 2026 / Sem 5
-    academic_year = Column(String(20), default="2026-2027")
+    academic_year = Column(String(20), nullable=True)  # derived server-side from semester
     total_classes = Column(Integer, nullable=False) # e.g. 40
     period_duration = Column(Integer, nullable=False, default=55) # minutes
     # Derived attribute stored as a generated column: the DBMS computes it, so it can

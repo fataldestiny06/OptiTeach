@@ -20,11 +20,15 @@ async def upload_syllabus(
     try:
         if file:
             content_bytes = await read_syllabus_upload(file)
-            filename = file.filename.lower()
-            if filename.endswith(".pdf"):
+            filename = (file.filename or "").lower()
+            content_type = (file.content_type or "").lower()
+            if filename.endswith(".pdf") or "pdf" in content_type or b"%PDF" in content_bytes[:1024]:
                 curriculum = nlp_provider.extract_from_pdf(content_bytes)
             else:
-                text = content_bytes.decode("utf-8", errors="ignore")
+                try:
+                    text = content_bytes.decode("utf-8")
+                except UnicodeDecodeError:
+                    text = content_bytes.decode("latin-1", errors="ignore")
                 curriculum = nlp_provider.extract_from_text(text)
         elif raw_text and raw_text.strip():
             curriculum = nlp_provider.extract_from_text(raw_text.strip())

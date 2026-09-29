@@ -38,6 +38,7 @@ export default function UploadPage() {
   const [confirmedCourse, setConfirmedCourse] = useState<{ id: string; title: string; code: string } | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [rawText, setRawText] = useState("");
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [expandedUnits, setExpandedUnits] = useState<Set<number>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -49,7 +50,20 @@ export default function UploadPage() {
   // Editable course parameters
   const [courseTitle, setCourseTitle] = useState("");
   const [courseCode, setCourseCode] = useState("");
-  const [semester, setSemester] = useState("Fall 2026");
+  const [semester, setSemester] = useState(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1; // 1-based
+    return month >= 6 && month <= 11 ? `Fall ${year}` : `Spring ${year}`;
+  });
+  const [academicYear, setAcademicYear] = useState(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth() + 1;
+    // Academic year starts in June; if we're Jan–May we're still in the prev year's cycle
+    const start = m >= 6 ? y : y - 1;
+    return `${start}-${start + 1}`;
+  });
   const [totalClasses, setTotalClasses] = useState(40);
   const [periodDuration, setPeriodDuration] = useState(55);
 
@@ -80,6 +94,7 @@ export default function UploadPage() {
     setLoading(true);
     setConfirmedCourse(null);
     setErrorMessage(null);
+    setUploadedFileName(file ? file.name : null);
     try {
       const result = await syllabusAPI.upload(file, !file ? text || undefined : undefined);
       setCurriculum(result);
@@ -89,6 +104,11 @@ export default function UploadPage() {
       if (result.course_code) {
         setCourseCode(result.course_code);
       }
+      // Auto-populate from NLP-extracted document metadata when available
+      if (result.semester) setSemester(result.semester);
+      if (result.academic_year) setAcademicYear(result.academic_year);
+      if (result.suggested_total_classes) setTotalClasses(result.suggested_total_classes);
+      if (result.suggested_period_duration) setPeriodDuration(result.suggested_period_duration);
       setExpandedUnits(new Set(result.units.map((_, i) => i)));
     } catch (err) {
       const msg = err instanceof Error ? err.message : "The syllabus could not be read.";
@@ -115,10 +135,10 @@ export default function UploadPage() {
         const newCourse = await coursesAPI.create({
           code: courseCode.trim() || curriculum.course_code,
           title: courseTitle.trim() || curriculum.course_name,
-          semester: semester.trim() || "Fall 2026",
+          semester: semester.trim(),
           total_classes: totalClasses,
           period_duration: periodDuration,
-          academic_year: "2026-2027",
+          academic_year: academicYear,
           section_name: "Section A",
         });
         activeCourseId = newCourse.id;
@@ -170,6 +190,7 @@ export default function UploadPage() {
   const reset = () => {
     setCurriculum(null);
     setConfirmedCourse(null);
+    setUploadedFileName(null);
   };
 
   return (
@@ -239,7 +260,7 @@ export default function UploadPage() {
             <input
               ref={fileRef}
               type="file"
-              accept=".pdf,.txt,.md"
+              accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown"
               style={{ display: "none" }}
               onChange={(e) => {
                 const f = e.target.files?.[0];
@@ -249,9 +270,11 @@ export default function UploadPage() {
             />
             <Upload size={36} style={{ color: "var(--ink)", margin: "0 auto 14px" }} />
             <h2 style={{ fontSize: "1.05rem", marginBottom: 6 }}>
-              {loading ? "Reading the syllabus…" : "Drop a syllabus file here, or click to choose one"}
+              {loading
+                ? `Reading ${uploadedFileName ? `"${uploadedFileName}"` : "the syllabus"}…`
+                : "Drop a syllabus file here, or click to choose one"}
             </h2>
-            <p style={{ color: "var(--pencil)" }}>PDF, plain text (.txt) or Markdown (.md)</p>
+            <p style={{ color: "var(--pencil)" }}>PDF (.pdf), plain text (.txt) or Markdown (.md)</p>
           </div>
 
           <div className="card" style={{ padding: 24, display: "flex", flexDirection: "column" }}>
@@ -323,20 +346,23 @@ Normal forms: 1NF, 2NF, 3NF, BCNF`}
                   <Check size={18} style={{ color: "var(--tick)" }} /> Saved to {confirmedCourse.code}
                 </strong>
                 <p style={{ color: "var(--pencil)", marginTop: 4 }}>
-                  {confirmedCourse.title} now has its units and topics. Next, make the time plan so each period gets its topics.
+                  {confirmedCourse.title} curriculum confirmed! The semester time plan (MILP optimization), curriculum knowledge graph, and class sessions have been automatically generated.
                 </p>
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <Link href={`/courses/${confirmedCourse.id}`} className="btn btn-primary">Open the course</Link>
+                <Link href={`/courses/${confirmedCourse.id}`} className="btn btn-primary">Open course</Link>
+                <Link href={`/optimization?courseId=${confirmedCourse.id}`} className="btn btn-secondary">View time plan</Link>
+                <Link href={`/curriculum?courseId=${confirmedCourse.id}`} className="btn btn-secondary">Curriculum graph</Link>
+                <Link href={`/calendar?courseId=${confirmedCourse.id}`} className="btn btn-secondary">Class calendar</Link>
                 <button
                   type="button"
-                  className="btn btn-secondary"
+                  className="btn btn-ghost"
                   onClick={() => {
                     reset();
                     setRawText("");
                   }}
                 >
-                  Import another syllabus
+                  Import another
                 </button>
               </div>
             </div>

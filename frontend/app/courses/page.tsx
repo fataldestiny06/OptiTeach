@@ -86,9 +86,17 @@ export default function CoursesPage() {
 }
 
 function NewCourseDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (c: Course) => void }) {
-  const [form, setForm] = useState({
-    code: "", title: "", semester: "", academic_year: "2026-2027",
-    total_classes: 40, period_duration: 55, section_name: "Section A", student_count: 60,
+  const [form, setForm] = useState(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    const defaultSemester = month >= 6 && month <= 11 ? `Fall ${year}` : `Spring ${year}`;
+    const startYear = month >= 6 ? year : year - 1;
+    const defaultAcademicYear = `${startYear}-${startYear + 1}`;
+    return {
+      code: "", title: "", semester: defaultSemester, academic_year: defaultAcademicYear,
+      total_classes: 40, period_duration: 55, section_name: "Section A", student_count: 60,
+    };
   });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

@@ -46,7 +46,8 @@ class CourseCreate(BaseModel):
     code: str
     title: str
     semester: str
-    academic_year: str = "2026-2027"
+    # academic_year is optional; if omitted the API derives it from semester (e.g. "Fall 2026" → "2026-2027")
+    academic_year: Optional[str] = None
     total_classes: int = 40
     period_duration: int = 55
     section_name: str = "Section A"
@@ -112,6 +113,10 @@ class OutcomeDraft(BaseModel):
 class ExtractedCurriculum(BaseModel):
     course_name: str
     course_code: str
+    semester: Optional[str] = None
+    academic_year: Optional[str] = None
+    suggested_total_classes: Optional[int] = None
+    suggested_period_duration: Optional[int] = None
     outcomes: List[OutcomeDraft] = []
     units: List[UnitDraft] = []
     confidence_score: float = 0.92

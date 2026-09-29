@@ -28,7 +28,7 @@ from app.auth.security import get_current_user, get_current_teacher, get_accessi
 router = APIRouter(prefix="/courses", tags=["Courses & Optimization"], dependencies=[Depends(get_current_user)])
 
 MAX_SYLLABUS_BYTES = 5 * 1024 * 1024
-ALLOWED_SYLLABUS_SUFFIXES = (".pdf", ".txt", ".md")
+ALLOWED_SYLLABUS_SUFFIXES = (".pdf", ".txt", ".md", ".text", ".markdown")
 
 @router.get("", response_model=List[CourseOut])
 def list_courses(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -76,12 +76,26 @@ def create_course(
     if not teacher:
         raise HTTPException(status_code=403, detail="Only teachers can create courses")
 
+    # Derive academic_year from semester when not supplied.
+    # "Fall YYYY" → "YYYY-(YYYY+1)";  "Spring YYYY" → "(YYYY-1)-YYYY"
+    def _derive_academic_year(semester_str: str) -> str:
+        parts = semester_str.split()
+        for part in parts:
+            if part.isdigit() and len(part) == 4:
+                y = int(part)
+                if semester_str.lower().startswith("spring"):
+                    return f"{y - 1}-{y}"
+                return f"{y}-{y + 1}"
+        return semester_str  # fallback: store the semester string itself
+
+    academic_year = payload.academic_year or _derive_academic_year(payload.semester)
+
     course = Course(
         teacher_id=teacher.id,
         code=payload.code,
         title=payload.title,
         semester=payload.semester,
-        academic_year=payload.academic_year,
+        academic_year=academic_year,
         total_classes=payload.total_classes,
         period_duration=payload.period_duration,
         start_date=payload.start_date,
@@ -160,14 +174,26 @@ def get_course(c: Course = Depends(get_accessible_course), current_user: User = 
 # -------------------------------------------------------------
 async def read_syllabus_upload(file: UploadFile) -> bytes:
     """Bounded read with an extension allow-list; rejects oversized or unexpected files."""
-    if not file.filename or not file.filename.lower().endswith(ALLOWED_SYLLABUS_SUFFIXES):
+    filename = (file.filename or "").lower()
+    content_type = (file.content_type or "").lower()
+
+    has_valid_suffix = any(filename.endswith(s) for s in ALLOWED_SYLLABUS_SUFFIXES)
+    is_pdf_type = "pdf" in content_type or filename.endswith(".pdf")
+    is_text_type = any(t in content_type for t in ["text", "plain", "markdown"]) or any(filename.endswith(s) for s in [".txt", ".md", ".text", ".markdown"])
+
+    if not (has_valid_suffix or is_pdf_type or is_text_type):
         raise HTTPException(status_code=415, detail="Syllabus must be a .pdf, .txt or .md file")
+
     content = await file.read(MAX_SYLLABUS_BYTES + 1)
     if len(content) > MAX_SYLLABUS_BYTES:
         raise HTTPException(status_code=413, detail="Syllabus file exceeds the 5 MB limit")
-    if file.filename.lower().endswith(".pdf") and not content.startswith(b"%PDF"):
+
+    if (filename.endswith(".pdf") or is_pdf_type) and b"%PDF" not in content[:1024]:
         raise HTTPException(status_code=415, detail="File is not a valid PDF")
+
     return content
+
+
 @router.post("/{course_id}/syllabus", dependencies=[Depends(limit_uploads)])
 async def upload_course_syllabus(
     course_id: str,
@@ -180,11 +206,15 @@ async def upload_course_syllabus(
     try:
         if file:
             content_bytes = await read_syllabus_upload(file)
-            filename = file.filename.lower()
-            if filename.endswith(".pdf"):
+            filename = (file.filename or "").lower()
+            content_type = (file.content_type or "").lower()
+            if filename.endswith(".pdf") or "pdf" in content_type or b"%PDF" in content_bytes[:1024]:
                 curriculum = nlp_provider.extract_from_pdf(content_bytes)
             else:
-                text = content_bytes.decode("utf-8", errors="ignore")
+                try:
+                    text = content_bytes.decode("utf-8")
+                except UnicodeDecodeError:
+                    text = content_bytes.decode("latin-1", errors="ignore")
                 curriculum = nlp_provider.extract_from_text(text)
         elif raw_text and raw_text.strip():
             curriculum = nlp_provider.extract_from_text(raw_text.strip())

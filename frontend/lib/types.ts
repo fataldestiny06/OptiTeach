@@ -52,6 +52,10 @@ export interface UnitDraft {
 export interface ExtractedCurriculum {
   course_name: string;
   course_code: string;
+  semester?: string;
+  academic_year?: string;
+  suggested_total_classes?: number;
+  suggested_period_duration?: number;
   outcomes: OutcomeDraft[];
   units: UnitDraft[];
   confidence_score: number;
